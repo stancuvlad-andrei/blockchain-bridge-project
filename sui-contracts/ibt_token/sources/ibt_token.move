@@ -1,6 +1,8 @@
 module 0x0::IBT {
     use sui::coin::{Self, TreasuryCap};
     use sui::event;
+    use sui::transfer;
+    use sui::tx_context;
 
     public struct IBT has drop {}
 
@@ -26,17 +28,23 @@ module 0x0::IBT {
         eth_address: vector<u8>, 
     }
 
+    // Burn tokens and emit a bridge event (for Sui-to-Ethereum bridging)
     public entry fun burn_and_bridge(
         auth: &mut BridgeAuth,
-        coin_to_burn: coin::Coin<IBT>, 
-        eth_address: vector<u8>,       
+        coin_to_burn: &mut coin::Coin<IBT>, // Change to mutable reference
+        eth_address: vector<u8>,            // Ethereum address as vector<u8>
+        amount: u64,                        // Amount of tokens to burn
         ctx: &mut tx_context::TxContext
     ) {
         let sender = tx_context::sender(ctx);
-        let amount = sui::balance::value(coin::balance(&coin_to_burn));
 
-        coin::burn(&mut auth.treasury_cap, coin_to_burn);
+        // Split the coin to burn the specified amount
+        let coin_to_burn_split = coin::split(coin_to_burn, amount, ctx);
 
+        // Burn the specified amount of tokens
+        coin::burn(&mut auth.treasury_cap, coin_to_burn_split);
+
+        // Emit bridge event
         event::emit(BridgeEvent {
             sui_address: sender,
             amount,
@@ -46,6 +54,7 @@ module 0x0::IBT {
 
     const E_NOT_AUTHORIZED: u64 = 0;
 
+    // Initialize the IBT token
     fun init(witness: IBT, ctx: &mut tx_context::TxContext) {
         let (treasury_cap, metadata) = coin::create_currency(
             witness,
@@ -67,10 +76,11 @@ module 0x0::IBT {
         }, sender);
     }
 
+    // Mint tokens (only callable by the admin)
     public entry fun mint(
         auth: &mut BridgeAuth,
-        amount: u64,
-        recipient: address,
+        amount: u64,                  // Amount as u64
+        recipient: address,           // Recipient address
         ctx: &mut tx_context::TxContext
     ) {
         assert!(tx_context::sender(ctx) == auth.admin, E_NOT_AUTHORIZED);
@@ -84,22 +94,24 @@ module 0x0::IBT {
         });
     }
 
+    // Burn tokens (only callable by the admin)
     public entry fun burn(
         auth: &mut BridgeAuth,
-        amount: u64,
+        amount: u64,                  // Amount as u64
         ctx: &mut tx_context::TxContext
     ) {
-        let coin_to_burn = coin::mint(&mut auth.treasury_cap, amount, ctx);
-        let burner = tx_context::sender(ctx);
+        assert!(tx_context::sender(ctx) == auth.admin, E_NOT_AUTHORIZED);
 
+        let coin_to_burn = coin::mint(&mut auth.treasury_cap, amount, ctx);
         coin::burn(&mut auth.treasury_cap, coin_to_burn);
 
         event::emit(BurnEvent {
-            burner,
+            burner: tx_context::sender(ctx),
             amount
         });
     }
 
+    // Get the total supply of IBT tokens
     public fun total_supply(auth: &BridgeAuth): u64 {
         coin::total_supply(&auth.treasury_cap)
     }

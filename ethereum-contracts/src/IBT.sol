@@ -1,58 +1,33 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.17;
 
-contract IBT {
-    string public name = "Inter-Blockchain Token";
-    string public symbol = "IBT";
-    uint8 public decimals = 18;
-    uint256 public totalSupply;
-    address public deployer;
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-    mapping(address => uint256) public balanceOf;
-
-    event Transfer(address indexed from, address indexed to, uint256 value);
+contract IBT is ERC20, Ownable {
     event BridgeInitiated(address indexed from, uint256 amount, string destinationChain, string destinationAddress);
 
-    constructor() {
-        deployer = msg.sender;
+    constructor() ERC20("Inter BlockChain Token", "IBT") Ownable(msg.sender) {}
+
+    // Mint tokens (only owner can mint)
+    function mint(address to, uint256 amount) external onlyOwner {
+        _mint(to, amount);
     }
 
-    modifier onlyDeployer() {
-        require(msg.sender == deployer, "Only deployer can call this");
-        _;
+    // Burn tokens (users can burn their own tokens)
+    function burn(uint256 amount) external {
+        require(balanceOf(msg.sender) >= amount, "Insufficient balance");
+        _burn(msg.sender, amount);
     }
 
-    function mint(address to, uint256 amount) external onlyDeployer {
-        totalSupply += amount;
-        balanceOf[to] += amount;
-        emit Transfer(address(0), to, amount);
-    }
+    // Initiate bridge (users can bridge their own tokens)
+    function initiatebridge(uint256 amount, string calldata suiAddress) external {
+        require(balanceOf(msg.sender) >= amount, "Insufficient balance");
 
-    function burn(address from, uint256 amount) external onlyDeployer {
-        require(balanceOf[from] >= amount, "Insufficient balance");
-        totalSupply -= amount;
-        balanceOf[from] -= amount;
-        emit Transfer(from, address(0), amount);
-    }
+        // Burn the tokens from the user's account
+        _burn(msg.sender, amount);
 
-    function initiateBridge(uint256 amount, string calldata suiAddress) external {
-        require(balanceOf[msg.sender] >= amount, "Insufficient balance");
-
-        // Transfer tokens from the user to the contract
-        balanceOf[msg.sender] -= amount;
-        balanceOf[address(this)] += amount;
-        emit Transfer(msg.sender, address(this), amount);
-
-        // Emit an event to signal the bridge initiation
+        // Emit bridge event
         emit BridgeInitiated(msg.sender, amount, "sui", suiAddress);
-    }
-
-    function withdrawBridgeTokens(uint256 amount) external onlyDeployer {
-        require(balanceOf[address(this)] >= amount, "Insufficient contract balance");
-
-        // Transfer tokens from the contract to the deployer
-        balanceOf[address(this)] -= amount;
-        balanceOf[deployer] += amount;
-        emit Transfer(address(this), deployer, amount);
     }
 }
